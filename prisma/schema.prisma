@@ -1,0 +1,178 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuthProvider {
+  MAGIC_LINK
+  GOOGLE
+  MICROSOFT
+}
+
+enum Plan {
+  FREE
+  STANDARD
+  PRO
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+  OWNER
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model User {
+  id                    String        @id @default(cuid())
+  email                 String        @unique
+  name                  String
+  firstName             String?
+  lastName              String?
+  provider              AuthProvider?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  workType              String?
+  companySize           String?
+  currentPlan           Plan          @default(FREE)
+  emailVerified         Boolean       @default(false)
+  industry              String?
+  lastActiveWorkspaceId String?       @unique
+  lastActiveWorkspace   Workspace?    @relation("UserLastActiveWorkspace", fields: [lastActiveWorkspaceId], references: [id])
+
+  memberships       Member[]
+  invitesSent       Invite[]       @relation("InvitesSentBy")
+  subscriptions     Subscription[]
+  createdWorkspaces Workspace[]    @relation("UserCreatedWorkspaces")
+  Sessions          Session[]
+  joinRequests      JoinRequest[]
+  notifications     Notification[]
+}
+
+model Workspace {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  imageUrl      String?
+  createdAt     DateTime @default(now())
+  createdById   String
+  createdBy     User     @relation("UserCreatedWorkspaces", fields: [createdById], references: [id])
+  allowAutoJoin Boolean  @default(false)
+
+  members         Member[]
+  invites         Invite[]
+  joinRequests    JoinRequest[]
+  notifications   Notification[]
+  usersLastActive User?          @relation("UserLastActiveWorkspace")
+}
+
+model Member {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  role        Role     @default(MEMBER)
+  joinedAt    DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([userId, workspaceId])
+}
+
+model Invite {
+  id               String       @id @default(uuid())
+  token            String       @unique
+  role             Role         @default(MEMBER)
+  workspaceId      String
+  workspace        Workspace    @relation(fields: [workspaceId], references: [id])
+  invitedById      String
+  invitedBy        User         @relation("InvitesSentBy", fields: [invitedById], references: [id])
+  status           InviteStatus @default(PENDING)
+  approved         Boolean      @default(false)
+  approvalRequired Boolean      @default(false)
+  expiresAt        DateTime
+  createdAt        DateTime     @default(now())
+}
+
+model Subscription {
+  id                String   @id @default(cuid())
+  userId            String
+  plan              Plan
+  status            String // active, canceled, incomplete, etc.
+  provider          String // "STRIPE", etc.
+  providerId        String   @unique // Stripe sub ID
+  startedAt         DateTime
+  currentPeriodEnd  DateTime // 👈 when user will be billed next
+  cancelAtPeriodEnd Boolean  @default(false) // 👈 stripe auto-cancel flag
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Permission {
+  id      String  @id @default(cuid())
+  role    Role
+  action  String // e.g. "create_link", "manage_members"
+  allowed Boolean
+}
+
+model Verification {
+  id         String   @id @default(cuid()) @map("_id")
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Session {
+  id             String   @id @default(cuid()) @map("_id")
+  userId         String
+  token          String
+  expiresAt      DateTime
+  ipAddress      String?
+  userAgent      String?
+  impersonatedBy String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model JoinRequest {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  role        Role
+  createdAt   DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([userId, workspaceId])
+}
+
+model Notification {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  message     String
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id])
+  read        Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+}
